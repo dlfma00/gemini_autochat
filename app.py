@@ -101,7 +101,7 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # 1. 사용자 역할 선택 UI (사이드바)
-role_options = ["어리버리한 신입 부원", "정체불명의 해킹범", "대화는 안 통하는 '귀신'", "직접 입력..."]
+role_options = ["신입 부원", "해킹범", "귀신", "직접 입력..."]
 selected_role = st.sidebar.selectbox("당신의 정체를 선택하세요:", role_options)
 
 if selected_role == "직접 입력...":
