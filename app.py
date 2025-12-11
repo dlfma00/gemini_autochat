@@ -1,19 +1,24 @@
-
-# ===================================================
-# ⭐️ 셀 2: app.py 파일 생성 및 웹 챗봇 코드 (Streamlit 적용)
-# ===================================================
 import streamlit as st
 import google.generativeai as genai
+import sys
+
+# ===================================================
+# ⭐️ 1. 기본 설정 및 데이터
+# ===================================================
 
 # Streamlit 설정: 웹페이지 제목 및 레이아웃 설정
 st.set_page_config(page_title="7인 자캐 단톡방 시뮬레이터", layout="wide")
 st.title("📱 7인 자캐 단톡방 시뮬레이터")
 
-# ⚠️ 여기에 발급받은 API 키를 넣으세요! (Streamlit Cloud 배포 시는 보안상 별도 처리 필요)
-# 지금은 테스트를 위해 여기에 직접 넣어둡니다.
-API_KEY = st.secrets["GEMINI_API_KEY"]
+# ⚠️ 보안된 API 키 로드
+try:
+    # Streamlit Cloud Secrets에서 안전하게 키를 가져옵니다.
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
+    st.stop() # 키가 없으면 앱 실행을 멈춥니다.
 
-# 자캐 6명 설정
+# 자캐 6명 설정 (여기에 친구들 캐릭터 설정을 자세히 넣어주세요!)
 CHARACTERS = """
 1. [강건우]: 20대 초반, 다혈질, 행동파. 리더인 척하지만 허당임. 말투가 거칠음.
 2. [이서아]: 20대 초반, 차가운 이성주의자. 안경캐. 팩트폭격을 주로 함.
@@ -23,7 +28,11 @@ CHARACTERS = """
 6. [정태민]: 20대 초반, 소심함, 말끝을 흐림. 착하지만 답답함.
 """
 
-# API 설정 및 모델 초기화 함수
+# ===================================================
+# ⭐️ 2. 모델 초기화 함수
+# ===================================================
+
+# @st.cache_resource 데코레이터는 제거했습니다. (KeyError 방지)
 def initialize_model(user_role):
     # API 키 설정
     genai.configure(api_key=API_KEY)
@@ -40,14 +49,14 @@ def initialize_model(user_role):
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
-    # Streamlit은 st.session_state를 사용하여 대화 기록을 유지합니다.
-    return model.start_chat(history=[]) # <--- 무조건 빈 리스트로 시작
+    # ChatSession은 항상 빈 기록으로 시작합니다. (KeyError 방지)
+    return model.start_chat(history=[])
 
 # ===================================================
-# ⭐️ 웹 인터페이스 (UI) 구현
+# ⭐️ 3. 웹 인터페이스 (UI) 구현
 # ===================================================
 
-# 1. 사용자 역할 선택 UI
+# 1. 사용자 역할 선택 UI (사이드바)
 role_options = ["어리버리한 신입 부원", "정체불명의 해킹범", "대화는 안 통하는 '귀신'", "직접 입력..."]
 selected_role = st.sidebar.selectbox("당신의 정체를 선택하세요:", role_options)
 
@@ -56,55 +65,12 @@ if selected_role == "직접 입력...":
 else:
     user_role = selected_role
 
-# 세션 초기화 (모델과 대화 기록)
-if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작"):
+# 2. 세션 초기화 및 새 채팅 시작 버튼 (버튼 ID 중복 오류 방지 위해 key="restart_chat_btn" 추가)
+# 이 블록이 앱의 핵심 초기화 로직입니다.
+if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role:
-        st.session_state.chat = initialize_model(user_role)
+        # 메시지 기록을 먼저 비우고 모델을 초기화합니다.
         st.session_state.messages = []
-        st.session_state.initial_message_sent = False
-        st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
-    else:
-        st.sidebar.warning("역할을 먼저 입력해 주세요.")
-
-# 2. 대화 기록 표시
-if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작"):
-    if user_role:
-        # 1. 메시지 기록을 먼저 비웁니다. (KeyError 방지)
-        st.session_state.messages = []
-        
-        # 2. 비워진 기록으로 모델을 초기화합니다.
         st.session_state.chat = initialize_model(user_role)
         
-        st.session_state.initial_message_sent = False
-        st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
-    else:
-        st.sidebar.warning("역할을 먼저 입력해 주세요.")
-
-    # 입장 메시지 자동 전송 (최초 1회)
-    if not st.session_state.initial_message_sent:
-        initial_input = f"(시스템 알림: '{user_role}'님이 입장하셨습니다.)"
-        with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
-            response = st.session_state.chat.send_message(initial_input)
-            
-            # 사용자 메시지로 저장
-            st.session_state.messages.append({"role": "user", "content": initial_input})
-            
-            # AI 메시지로 저장
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-            st.session_state.initial_message_sent = True
-            st.rerun()
-
-    # 3. 사용자 입력 처리
-    if prompt := st.chat_input("채팅을 입력하세요..."):
-        # 사용자 메시지를 화면에 표시 및 저장
-        st.chat_message("user").markdown(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-        # Gemini API 호출 및 응답
-        with st.spinner('캐릭터들이 대화 중...'):
-            response = st.session_state.chat.send_message(prompt)
-        
-        # AI 응답을 화면에 표시 및 저장
-        with st.chat_message("assistant"):
-            st.markdown(response.text)
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
+        st.session_state.initial
