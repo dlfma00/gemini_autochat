@@ -41,7 +41,7 @@ def initialize_model(user_role):
         system_instruction=system_prompt
     )
     # Streamlit은 st.session_state를 사용하여 대화 기록을 유지합니다.
-    return model.start_chat(history=st.session_state.get('messages', []))
+    return model.start_chat(history=[]) # <--- 무조건 빈 리스트로 시작
 
 # ===================================================
 # ⭐️ 웹 인터페이스 (UI) 구현
