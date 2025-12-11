@@ -37,26 +37,30 @@ def parse_and_display_response(response_text, is_initial=False):
     return messages_to_save
 
 # ===================================================
-# ⭐️ 2. 모델 설정 및 프롬프트 생성 (API 요청 최적화)
+# ⭐️ 2. 파일 로드 및 프롬프트 생성 (안정성 강화)
 # ===================================================
 
-# 🚨 파일 읽기 및 프롬프트 생성을 캐시하여 API 호출 시 토큰 낭비 방지
+# 🚨 파일 로드 및 프롬프트 생성을 최상위 캐시 레이어에서 처리
 @st.cache_resource 
 def get_system_prompt():
-    # 2.1. 텍스트 파일에서 캐릭터 설정 데이터 로드 (파일 경로 명시적 지정)
     CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
     try:
         with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
             CHARACTERS = f.read()
     except Exception as e:
+        # 파일 로드 실패 시, 앱을 멈추고 오류 메시지를 표시합니다.
         st.error(f"캐릭터 설정 파일 로드 오류: {e}")
         st.stop()
         
     return CHARACTERS
 
+# ===================================================
+# ⭐️ 3. 모델 초기화 함수 (API 호출 최적화)
+# ===================================================
+
 # API 호출을 최소화하기 위해 @st.cache_resource 사용
 @st.cache_resource 
-def initialize_model(user_role, session_id): # 🚨 세션 분리 위해 session_id 인자 추가
+def initialize_model(user_role, session_id): # 세션 분리 위해 session_id 인자 사용
     # ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
     try:
         API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -88,15 +92,16 @@ def initialize_model(user_role, session_id): # 🚨 세션 분리 위해 session
 # ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
 # ===================================================
 
-st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
-st.title("괴동챗봇(아직미완성)")
+# 🚨 앱 제목을 최종 제목으로 통일하여 업데이트 확인을 쉽게 합니다.
+st.set_page_config(page_title="7인 자캐 단톡방 시뮬레이터", layout="wide")
+st.title("📱 7인 자캐 단톡방 시뮬레이터")
 
-# 🚨 최상위에서 messages 리스트가 없으면 강제 초기화 (세션 공유 방지 1)
+# 🚨 최상위에서 messages 리스트가 없으면 강제 초기화 (세션 공유 방지)
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # 1. 사용자 역할 선택 UI (사이드바)
-role_options = ["신입 부원", "해킹범", "귀신", "직접 입력..."]
+role_options = ["어리버리한 신입 부원", "정체불명의 해킹범", "대화는 안 통하는 '귀신'", "직접 입력..."]
 selected_role = st.sidebar.selectbox("당신의 정체를 선택하세요:", role_options)
 
 if selected_role == "직접 입력...":
@@ -104,12 +109,12 @@ if selected_role == "직접 입력...":
 else:
     user_role = selected_role
 
-# 2. 세션 초기화 및 새 채팅 시작 버튼 (버튼 ID 충돌 방지 key 추가)
+# 2. 세션 초기화 및 새 채팅 시작 버튼
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role:
         st.session_state.messages = []
         
-        # 🚨 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
+        # 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
         unique_session_id = time.time()
         
         st.session_state.chat = initialize_model(user_role, unique_session_id)
