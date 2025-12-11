@@ -1,7 +1,42 @@
 import streamlit as st
 import google.generativeai as genai
 import sys
+# ===================================================
+# ⭐️ app.py 상단 (import문 아래)에 추가하세요
+# ===================================================
 
+# Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하는 함수
+def parse_and_display_response(response_text):
+    # 정규표현식을 사용해 "[이름]:" 패턴을 기준으로 텍스트를 나눕니다.
+    # 예: "[강건우]: 안녕하세요"
+    import re
+    
+    # 정규식: 대괄호 안의 이름과 콜론을 찾음 (예: [강건우]:)
+    pattern = re.compile(r'(\[[^\]]+\]:\s*)')
+    
+    # 패턴 기준으로 텍스트를 나눔 (이름이 포함된 구분자도 유지)
+    parts = pattern.split(response_text)
+    
+    messages_to_save = []
+    
+    # parts 리스트는 빈 문자열, 이름+콜론, 대사, 이름+콜론, 대사 순서로 나옵니다.
+    for i in range(1, len(parts), 2):
+        speaker = parts[i].strip() # [강건우]:
+        dialogue = parts[i+1].strip() # 대화 내용
+        
+        if dialogue: # 대화 내용이 비어있지 않다면
+            # 말풍선에 출력
+            with st.chat_message("assistant"):
+                st.markdown(f"**{speaker}** {dialogue}") # 이름은 굵게 표시
+            
+            # 세션 상태에 저장할 형식 (나중에 다시 로드할 때 필요)
+            messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
+            
+    return messages_to_save
+
+# ===================================================
+# ⭐️ 여기까지 추가합니다.
+# ===================================================
 # ===================================================
 # ⭐️ 1. 기본 설정 및 데이터
 # ===================================================
