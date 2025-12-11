@@ -164,7 +164,7 @@ def initialize_model(user_role, unique_uuid):
 
     [캐릭터 명단]: 
     {CHARACTERS}
-    [사용자(User) 설정]: 사용자는 **'{user_role}'입니다.
+    [사용자(User) 설정]: 사용자는 '{user_role}'입니다.
     """
     
     model = genai.GenerativeModel(
