@@ -8,7 +8,7 @@ import uuid
 import json 
 
 # ===================================================
-# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수
+# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수 (기억력 및 토큰 최적화 로직 추가)
 # ===================================================
 
 # 🚨 CSS 정의: 사용자(user) 말풍선 색상을 노란색 계열로 변경
@@ -53,6 +53,33 @@ def save_chat_log(messages):
 def initialize_shared_log():
     save_chat_log([])
 
+# 🚨🚨🚨 새로 추가된 함수 1: Gemini History 형식으로 변환 및 기록 제한 (30개)
+def format_log_for_gemini(log_messages):
+    
+    # 🚨 핵심: 로그의 마지막 30개 메시지만 선택하여 토큰 사용량 최적화
+    recent_log = log_messages[-30:] 
+    
+    history = []
+    for msg in recent_log: 
+        # AI 응답은 "assistant"로, 사용자 입력은 "user"로 분류
+        role = msg["role"] if msg["role"] == "assistant" else "user"
+        content = msg["content"]
+        
+        history.append({
+            "role": role,
+            "parts": [{"text": content}]
+        })
+    return history
+
+# 🚨🚨🚨 새로 추가된 함수 2: 채팅 객체의 기록을 파일 로그로 강제 복원 (기억 주입)
+def restore_chat_history(chat_session):
+    # 파일에서 전체 로그를 읽어와 Gemini 포맷으로 변환 (이 과정에서 30개 제한 적용)
+    log = load_chat_log()
+    history = format_log_for_gemini(log)
+    
+    # 채팅 세션의 내부 history를 강제로 업데이트 (모델에게 기억을 주입)
+    chat_session.history = history
+
 
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
@@ -80,7 +107,6 @@ def parse_and_display_response(response_text, is_initial=False):
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
-        # 이 부분은 API 호출 성공 후 즉시 rerurn을 유발하여 로그를 반영합니다.
         st.session_state.initial_message_sent = True
         st.rerun() 
 
@@ -206,6 +232,9 @@ if 'chat' in st.session_state:
         initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" 
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
+                # 🚨🚨🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입) 🚨🚨🚨
+                restore_chat_history(st.session_state.chat)
+                
                 response = st.session_state.chat.send_message(initial_input)
                 
                 # 1. 사용자 메시지 (입장)를 로그에 추가
@@ -248,6 +277,9 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
     # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
         try:
+            # 🚨🚨🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입) 🚨🚨🚨
+            restore_chat_history(st.session_state.chat)
+            
             response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
             
