@@ -8,7 +8,7 @@ import uuid
 import json 
 
 # ===================================================
-# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수
+# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수 (기억력 및 토큰 최적화 로직 추가)
 # ===================================================
 
 # 🚨 CSS 정의: 사용자(user) 말풍선 색상을 노란색 계열로 변경
@@ -53,6 +53,38 @@ def save_chat_log(messages):
 def initialize_shared_log():
     save_chat_log([])
 
+# 🚨🚨🚨 핵심 수정 1: Gemini History 형식으로 변환 및 기록 제한 (30개) + Role 변환
+def format_log_for_gemini(log_messages):
+    
+    # 🚨 핵심: 로그의 마지막 30개 메시지만 선택하여 토큰 사용량 최적화
+    recent_log = log_messages[-30:] 
+    
+    history = []
+    for msg in recent_log: 
+        # 🚨🚨🚨 Role 오류 수정: 'assistant'를 'model' 역할로 변환하여 API 호환성 확보
+        if msg["role"] == "assistant":
+            role = "model"
+        else:
+            # 사용자 입력 (user)은 그대로 'user' 역할 유지
+            role = "user"
+        
+        content = msg["content"]
+        
+        history.append({
+            "role": role,
+            "parts": [{"text": content}]
+        })
+    return history
+
+# 🚨🚨🚨 핵심 수정 2: 채팅 객체의 기록을 파일 로그로 강제 복원 (기억 주입)
+def restore_chat_history(chat_session):
+    # 파일에서 전체 로그를 읽어와 Gemini 포맷으로 변환 (이 과정에서 30개 제한 적용)
+    log = load_chat_log()
+    history = format_log_for_gemini(log)
+    
+    # 채팅 세션의 내부 history를 강제로 업데이트 (모델에게 기억을 주입)
+    chat_session.history = history
+
 
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
@@ -80,7 +112,6 @@ def parse_and_display_response(response_text, is_initial=False):
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
-        # 이 부분은 API 호출 성공 후 즉시 rerurn을 유발하여 로그를 반영합니다.
         st.session_state.initial_message_sent = True
         st.rerun() 
 
@@ -122,14 +153,19 @@ def initialize_model(user_role, unique_uuid):
     [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 1~6명이 대화에 참여하세요. 한 사람이 여러 번 말할 수도 있습니다.
     각 캐릭터의 대사는 띄어쓰기 포함 최대 15자를 넘지 않도록 합니다.** (단, ㅋㅋㅋㅋㅋㅋㅋㅋㅋ 등 감정표현이 길어지는 경우나, 말을 길게 해야 할 맥락이 명확한 경우에만 예외적으로 10자를 초과할 수 있습니다.)
     
+    [자발적 대화 규칙]:
+    1.  사용자가 입력하지 않더라도, **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작할 수 있습니다.
+    2.  **예시 주제:** "배고파", "오늘 숙제 했냐?", "내일 모임 몇 시?", "뭐 재밌는 일 없음?" 등 고등학생들이 나눌법한 일상적인 대화를 자유롭게 던지세요.
+
     [대화 스타일 - 최우선 규칙]: 모든 대사는 **카톡, 트위터, SNS에서 친구끼리 대화하듯** 극도로 비격식적이고 구어체로 작성되어야 합니다.
     1. 문장부호, 띄어쓰기, 조사는 **의도적으로 생략하거나 축약**해야 합니다. 강조합니다. 문장 끝에 점을 찍지 마세요.
     2. 축약어(줄임말), 초성('ㅇㅋ', 'ㄱㄱ'), 밈, 이모티콘('ㅋㅋ', 'ㅠㅠ', 'ㅇㅈ')을 **적극적으로** 사용하세요.
     3. 필요시 급하게 타이핑한 듯한 **오타나 짤막한 감탄사**('아', '헐', '뭐야')가 포함될 수 있습니다.
     4. 종종 사용자가 입력한 말과 관계없이 **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작하세요.
-        **예시 주제:** "이제 뭐하지", "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?", "야", "자 게임을 시작한다", "아 시끄러워", "나이제자러감ㅃㅃ"         특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 
+        **예시 주제:** "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?"
+        특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 
         절대 **사용자만 의식하지 않고** **주로 본인들끼리 대화**하세요.
-    5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 꼬투리를 잡아 헐뜯으세요. 서로를 의심하고 힐난하세요.
+    5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 
     
     [출력 형식]: 반드시 "[이름]: 대사"로만 작성합니다. (지문 금지)
 
@@ -201,6 +237,9 @@ if 'chat' in st.session_state:
         initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" 
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
+                # 🚨🚨🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입) 🚨🚨🚨
+                restore_chat_history(st.session_state.chat)
+                
                 response = st.session_state.chat.send_message(initial_input)
                 
                 # 1. 사용자 메시지 (입장)를 로그에 추가
@@ -243,6 +282,9 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
     # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
         try:
+            # 🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입)
+            restore_chat_history(st.session_state.chat)
+            
             response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
             
