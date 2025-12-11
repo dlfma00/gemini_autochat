@@ -265,4 +265,5 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
             st.rerun() 
             
         except Exception as e:
-            # ... (오류 처리 유지) ...
+            st.error(f"API오류발생: {e}")
+            st.stop()
