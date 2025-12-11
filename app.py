@@ -5,11 +5,28 @@ import re
 import os
 import time 
 import uuid 
-import json # 🚨 JSON 모듈 추가: 채팅 로그 저장/로드를 위해 사용
+import json 
+# ===================================================
+# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수
+# ===================================================
 
-# ===================================================
-# ⭐️ 0. 공유 로그 관리 함수
-# ===================================================
+# 🚨 CSS 정의: 사용자(user) 말풍선 색상을 노란색 계열로 변경
+CUSTOM_CSS = """
+<style>
+/* Streamlit 기본 채팅 메시지 컨테이너 */
+.stChatMessage {
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+/* 사용자(role="user") 말풍선에만 노란색 스타일 적용 */
+div[data-testid="stChatMessage"][data-state="final"][data-user="true"] {
+    background-color: #fffbdf; /* 연한 노란색 */
+    border-left: 5px solid #ffcc00; /* 왼쪽에 강조선을 추가 */
+}
+</style>
+"""
+
 CHAT_LOG_FILE = "chat_log.json"
 
 # 🚨 채팅 기록을 파일에서 읽어오는 함수
@@ -19,7 +36,6 @@ def load_chat_log():
             with open(CHAT_LOG_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception:
-        # 파일이 비어있거나 깨졌을 경우 빈 리스트 반환
         return []
     return []
 
@@ -27,15 +43,12 @@ def load_chat_log():
 def save_chat_log(messages):
     try:
         with open(CHAT_LOG_FILE, 'w', encoding='utf-8') as f:
-            # ensure_ascii=False로 한글 깨짐 방지
             json.dump(messages, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        # Streamlit Cloud에서는 파일 쓰기 권한 오류가 발생할 수 있습니다.
         st.error(f"채팅 로그 저장 중 오류 발생: {e}")
 
 # 🚨 새 채팅 시작 시 파일 내용도 초기화하는 함수
 def initialize_shared_log():
-    # 빈 리스트를 파일에 저장하여 로그를 초기화
     save_chat_log([])
 
 
@@ -45,7 +58,6 @@ def initialize_shared_log():
 
 # Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하고 출력하는 함수
 def parse_and_display_response(response_text, is_initial=False):
-    # 정규식: 대괄호 안의 이름과 콜론을 찾음 (예: [강건우]:)
     pattern = re.compile(r'\n*(\[[^\]]+\]:\s*)') 
     
     parts = pattern.split(response_text)
@@ -57,7 +69,6 @@ def parse_and_display_response(response_text, is_initial=False):
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
-
             # 🚨 출력 시 1초 지연 추가 (현실감 부여)
             time.sleep(1) 
             with st.chat_message("assistant"):
@@ -67,7 +78,6 @@ def parse_and_display_response(response_text, is_initial=False):
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
-        # 🚨 입장 메시지는 일단 세션 상태에 저장 후 st.rerun()으로 재시작하여 파일 로드 로직을 다시 타도록 합니다.
         st.session_state.messages.extend(messages_to_save)
         st.session_state.initial_message_sent = True
         st.rerun() 
@@ -94,10 +104,8 @@ def get_system_prompt():
 # ⭐️ 3. 모델 초기화 함수 (API 호출 최적화 및 세션 분리)
 # ===================================================
 
-# API 호출을 최소화하기 위해 @st.cache_resource 사용
 @st.cache_resource 
-def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효화 인자로 사용
-    # ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
+def initialize_model(user_role, unique_uuid): 
     try:
         API_KEY = st.secrets["GEMINI_API_KEY"]
     except KeyError:
@@ -143,13 +151,14 @@ def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효�
 # ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
 # ===================================================
 
+# 🚨 CSS 스타일을 앱에 주입하여 사용자 말풍선 색상을 변경
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True) 
+
 st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
 st.title("괴동챗봇(아직미완성)")
 
-# 🚨 최상위에서 user_role 세션 상태가 없으면 초기화
 if 'user_role' not in st.session_state:
     st.session_state.user_role = ""
-    # 🚨 'messages' 세션 상태는 사용하지 않지만, Streamlit 호환성을 위해 유지
     if 'messages' not in st.session_state:
          st.session_state.messages = []
 
@@ -160,13 +169,11 @@ user_role_input = st.sidebar.text_input("당신의 이름을 입력하세요:")
 # 2. 세션 초기화 및 새 채팅 시작 버튼
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role_input:
-        # 🚨 공유 파일 로그 초기화 (새 대화 시작)
         initialize_shared_log()
         
-        st.session_state.messages = load_chat_log() # 🚨 파일에서 로드
-        st.session_state.user_role = user_role_input # 🚨 현재 사용자 이름을 세션에 저장
+        st.session_state.messages = load_chat_log() 
+        st.session_state.user_role = user_role_input 
         
-        # 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
         unique_session_id = str(uuid.uuid4())
         
         st.session_state.chat = initialize_model(st.session_state.user_role, unique_session_id)
@@ -178,14 +185,20 @@ if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key=
     
 # 3. 대화 기록 표시 및 입장 메시지 전송
 if 'chat' in st.session_state:
-    # 🚨 앱이 실행될 때마다 파일에서 최신 기록을 읽어옴
     current_log = load_chat_log() 
     
     # 🚨 파일 로그를 기반으로 대화 기록 표시
     for message in current_log:
-        # role은 이제 출력에 중요하지 않으므로, 모두 'user'로 통일하여 처리
-        with st.chat_message("user"): 
-            st.markdown(message["content"]) 
+        # role은 이제 출력에 중요하지 않으므로, content의 이름 태그를 통해 구분됨.
+        # Streamlit이 content의 **[이름]** 형식을 파싱하지 못하므로, role을 고정하지 않고 content를 출력합니다.
+        
+        # 🚨 여기서 사용자 입력과 AI 응답의 role을 강제로 분리하여 CSS를 적용합니다.
+        if message["role"] == "assistant":
+             with st.chat_message("assistant"):
+                st.markdown(message["content"])
+        else:
+             with st.chat_message("user"): # 🚨 CSS 적용을 위해 role을 "user"로 설정
+                st.markdown(message["content"])
             
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
