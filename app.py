@@ -1,10 +1,43 @@
 import streamlit as st
 import google.generativeai as genai
 import sys
-import re # 파싱(분리)을 위해 re 모듈 사용
+import re 
 import os
-import time # 세션 분리를 위해 time 모듈 사용
-import uuid # 모델 캐시 무효화를 위해 uuid 모듈 사용
+import time 
+import uuid 
+import json # 🚨 JSON 모듈 추가: 채팅 로그 저장/로드를 위해 사용
+
+# ===================================================
+# ⭐️ 0. 공유 로그 관리 함수
+# ===================================================
+CHAT_LOG_FILE = "chat_log.json"
+
+# 🚨 채팅 기록을 파일에서 읽어오는 함수
+def load_chat_log():
+    try:
+        if os.path.exists(CHAT_LOG_FILE):
+            with open(CHAT_LOG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        # 파일이 비어있거나 깨졌을 경우 빈 리스트 반환
+        return []
+    return []
+
+# 🚨 채팅 기록을 파일에 저장하는 함수
+def save_chat_log(messages):
+    try:
+        with open(CHAT_LOG_FILE, 'w', encoding='utf-8') as f:
+            # ensure_ascii=False로 한글 깨짐 방지
+            json.dump(messages, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        # Streamlit Cloud에서는 파일 쓰기 권한 오류가 발생할 수 있습니다.
+        st.error(f"채팅 로그 저장 중 오류 발생: {e}")
+
+# 🚨 새 채팅 시작 시 파일 내용도 초기화하는 함수
+def initialize_shared_log():
+    # 빈 리스트를 파일에 저장하여 로그를 초기화
+    save_chat_log([])
+
 
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
@@ -25,14 +58,16 @@ def parse_and_display_response(response_text, is_initial=False):
         
         if dialogue: 
 
-            time.sleep(1) # 🚨 1초 지연 추가 (현실감 부여)
+            # 🚨 출력 시 1초 지연 추가 (현실감 부여)
+            time.sleep(1) 
             with st.chat_message("assistant"):
                 st.markdown(f"**{speaker}** {dialogue}") 
             
             messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
             
-    # API 요청 최적화: 입장 메시지 처리 후 재실행은 여기서 처리
+    # 입장 메시지 처리 후 재실행 로직
     if is_initial:
+        # 🚨 입장 메시지는 일단 세션 상태에 저장 후 st.rerun()으로 재시작하여 파일 로드 로직을 다시 타도록 합니다.
         st.session_state.messages.extend(messages_to_save)
         st.session_state.initial_message_sent = True
         st.rerun() 
@@ -43,7 +78,6 @@ def parse_and_display_response(response_text, is_initial=False):
 # ⭐️ 2. 파일 로드 및 프롬프트 생성 (안정성 강화)
 # ===================================================
 
-# 🚨 파일 로드 및 프롬프트 생성을 최상위 캐시 레이어에서 처리
 @st.cache_resource 
 def get_system_prompt():
     CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
@@ -51,7 +85,6 @@ def get_system_prompt():
         with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
             CHARACTERS = f.read()
     except Exception as e:
-        # 파일 로드 실패 시, 앱을 멈추고 오류 메시지를 표시합니다.
         st.error(f"캐릭터 설정 파일 로드 오류: {e}")
         st.stop()
         
@@ -73,7 +106,6 @@ def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효�
         
     genai.configure(api_key=API_KEY)
     
-    # 캐시된 캐릭터 설정을 가져옵니다.
     CHARACTERS = get_system_prompt()
     
     system_prompt = f"""
@@ -95,7 +127,7 @@ def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효�
     5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 
     
     [출력 형식]: 반드시 "[이름]: 대사"로만 작성합니다. (지문 금지)
-    
+
     [캐릭터 명단]: 
     {CHARACTERS}
     [사용자(User) 설정]: 사용자는 **'{user_role}'입니다.
@@ -105,62 +137,76 @@ def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효�
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
-    # 채팅 세션을 항상 빈 기록으로 시작합니다.
     return model.start_chat(history=[])
 
 # ===================================================
 # ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
 # ===================================================
 
-# 🚨 앱 제목을 '괴동챗봇(아직미완성)'으로 유지합니다.
 st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
 st.title("괴동챗봇(아직미완성)")
 
-# 🚨 최상위에서 messages 리스트가 없으면 강제 초기화 (세션 공유 방지)
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
+# 🚨 최상위에서 user_role 세션 상태가 없으면 초기화
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = ""
+    # 🚨 'messages' 세션 상태는 사용하지 않지만, Streamlit 호환성을 위해 유지
+    if 'messages' not in st.session_state:
+         st.session_state.messages = []
 
 # 1. 사용자 역할/이름 입력 UI (사이드바)
-user_role = st.sidebar.text_input("당신의 이름을 입력하세요:")
+user_role_input = st.sidebar.text_input("당신의 이름을 입력하세요:")
 
 
 # 2. 세션 초기화 및 새 채팅 시작 버튼
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
-    if user_role:
-        st.session_state.messages = []
-        st.session_state.user_role = user_role # 🚨 현재 사용자 이름을 세션에 저장
+    if user_role_input:
+        # 🚨 공유 파일 로그 초기화 (새 대화 시작)
+        initialize_shared_log()
+        
+        st.session_state.messages = load_chat_log() # 🚨 파일에서 로드
+        st.session_state.user_role = user_role_input # 🚨 현재 사용자 이름을 세션에 저장
         
         # 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
         unique_session_id = str(uuid.uuid4())
         
-        st.session_state.chat = initialize_model(user_role, unique_session_id)
+        st.session_state.chat = initialize_model(st.session_state.user_role, unique_session_id)
         
         st.session_state.initial_message_sent = False
-        st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
+        st.sidebar.success(f"✅ 당신은 [{st.session_state.user_role}]로 입장합니다.")
     else:
         st.sidebar.warning("이름을 먼저 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
     
 # 3. 대화 기록 표시 및 입장 메시지 전송
 if 'chat' in st.session_state:
-    # 대화 기록 표시
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            # 🚨 사용자 이름이 포함된 content를 그대로 출력
+    # 🚨 앱이 실행될 때마다 파일에서 최신 기록을 읽어옴
+    current_log = load_chat_log() 
+    
+    # 🚨 파일 로그를 기반으로 대화 기록 표시
+    for message in current_log:
+        # role은 이제 출력에 중요하지 않으므로, 모두 'user'로 통일하여 처리
+        with st.chat_message("user"): 
             st.markdown(message["content"]) 
-
+            
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
-        initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" # 🚨 세션에 저장된 이름 사용
+        initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" 
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
                 response = st.session_state.chat.send_message(initial_input)
                 
-                # 🚨 사용자 메시지도 [이름] 형식을 사용하도록 저장 (멀티유저 효과)
+                # 🚨 1. 사용자 메시지 (입장)를 로그에 추가
                 user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
-                st.session_state.messages.append({"role": "user", "content": user_display_input})
                 
-                # 파싱 함수를 통해 입장 메시지 저장 및 출력 후 st.rerun() 호출
-                parse_and_display_response(response.text, is_initial=True) 
+                # 🚨 2. AI 응답 파싱 및 로그에 추가
+                parsed_messages = parse_and_display_response(response.text)
+                
+                # 🚨 3. 파일 로그에 저장
+                new_log = current_log + [{"role": "user", "content": user_display_input}] + parsed_messages
+                save_chat_log(new_log)
+
+                # 🚨 4. 세션 상태 업데이트 후 재실행
+                st.session_state.initial_message_sent = True
+                st.rerun() 
                 
             except Exception as e:
                 st.error(f"API 호출 중 오류 발생: {e}")
@@ -169,28 +215,32 @@ if 'chat' in st.session_state:
 # 4. 사용자 입력 처리 (입력창이 항상 보이도록 조건문 밖, 파일의 가장 아래에 위치)
 if prompt := st.chat_input("채팅을 입력하세요..."):
     
-    # 채팅 객체가 없으면 입력 처리를 중단합니다. (초기화 전 입력 방지)
     if 'chat' not in st.session_state:
         st.warning("먼저 이름을 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
         st.stop()
         
-    # 🛠️ 멀티유저 효과를 위해 사용자 이름 태그를 붙여서 저장
+    # 1. 사용자 메시지 포맷팅
     user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
         
-    # 사용자 메시지 저장 및 표시
-    st.chat_message("user").markdown(user_display_prompt)
-    st.session_state.messages.append({"role": "user", "content": user_display_prompt})
-
-    # Gemini API 호출 및 응답
+    # 2. 전체 로그를 파일에서 읽어와서 사용자 메시지 추가
+    updated_messages = load_chat_log()
+    updated_messages.append({"role": "user", "content": user_display_prompt})
+    
+    # 3. Gemini API 호출
     with st.spinner('캐릭터들이 대화 중...'):
         try:
-            # 🚨 Gemini에게는 순수한 대화 내용만 전송 (모델이 [사용자이름]: 형식을 인식하도록 유도)
             response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
         except Exception as e:
             st.error(f"API 호출 중 오류 발생: {e}")
             st.stop()
     
-    # 응답 파싱 및 저장
+    # 4. AI 응답 파싱 및 로그에 추가
     parsed_messages = parse_and_display_response(full_response_text)
-    st.session_state.messages.extend(parsed_messages)
+    updated_messages.extend(parsed_messages)
+    
+    # 5. 🚨 모든 메시지를 파일에 최종 저장
+    save_chat_log(updated_messages) 
+
+    # 6. 🚨 앱 재실행(Rerun)하여 다른 사용자도 새 기록을 로드하게 유도
+    st.rerun()
