@@ -61,7 +61,7 @@ def format_log_for_gemini(log_messages):
     
     history = []
     for msg in recent_log: 
-        # 🚨 Role 오류 수정: 'assistant'를 'model' 역할로 변환하여 API 호환성 확보
+        # Role 오류 수정: 'assistant'를 'model' 역할로 변환하여 API 호환성 확보
         if msg["role"] == "assistant":
             role = "model"
         else:
@@ -94,6 +94,10 @@ def restore_chat_history(chat_session):
 def parse_and_display_response(response_text, is_initial=False):
     pattern = re.compile(r'\n*(\[[^\]]+\]:\s*)') 
     
+    # 🚨🚨🚨 새로 추가: 모든 마크다운 서식을 제거하는 정규식 (볼드, 이탤릭, 수평선 방지)
+    # 이 정규식은 [이름] 안의 괄호는 건드리지 않고, 대화 내용의 *, **, __, --- 등을 제거함.
+    markdown_pattern = re.compile(r'(\*\*|\*|__|___|---|___)') 
+    
     parts = pattern.split(response_text)
     
     messages_to_save = []
@@ -103,13 +107,19 @@ def parse_and_display_response(response_text, is_initial=False):
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
-            # 🚨 출력 시 1초 지연 추가 (현실감 부여)
+            
+            # 1. 정규식으로 볼드/이탤릭 마크 및 수평선 유발 문자열 강제 제거
+            clean_dialogue = markdown_pattern.sub('', dialogue).strip()
+            # 🚨🚨🚨 이름(speaker)에서도 모든 마크다운 문법 제거 🚨🚨🚨
+            clean_speaker = markdown_pattern.sub('', speaker).strip() 
+            
             time.sleep(1) 
             with st.chat_message("assistant"):
-                # 🚨🚨🚨 볼드체 중복 오류 해결: 이름(speaker)에만 볼드체 적용 🚨🚨🚨
-                st.markdown(f"{speaker} {dialogue.strip()}")
+                # 🚨🚨🚨 최종 수정: 출력 시 마크다운(볼드체) 없이 일반 텍스트로만 출력
+                st.markdown(f"{clean_speaker} {clean_dialogue}")
             
-            messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue.strip()}"})
+            # 🚨🚨🚨 저장 시에도 볼드체 마크 없이 일반 텍스트로 저장 🚨🚨🚨
+            messages_to_save.append({"role": "assistant", "content": f"{clean_speaker} {clean_dialogue}"})
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
@@ -148,8 +158,6 @@ def setup_genai():
 # ⭐️ 3. 모델 초기화 함수 (API 호출 최적화 및 세션 분리)
 # ===================================================
 
-# 🚨 initialize_model은 이제 @st.cache_resource를 제거하고 단순화되어야 하지만, 
-# 사용자님의 요청에 따라 @st.cache_resource를 유지하고 내부에서 API 설정만 분리합니다.
 @st.cache_resource 
 def initialize_model(user_role, unique_uuid): 
     
@@ -252,7 +260,7 @@ if 'chat' in st.session_state:
                 response = st.session_state.chat.send_message(initial_input)
                 
                 # 1. 사용자 메시지 (입장)를 로그에 추가
-                user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
+                user_display_input = f"[{st.session_state.user_role}]: (입장)" # 볼드 마크 제거
                 
                 # 2. AI 응답 파싱 및 로그에 추가
                 parsed_messages = parse_and_display_response(response.text)
@@ -281,12 +289,14 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
         
     # 1. 사용자 메시지 포맷팅 및 즉시 출력 
     # 🚨 time.sleep에 관계없이 사용자 메시지가 먼저 보이게 합니다.
-    user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
-    st.chat_message("user").markdown(user_display_prompt)
+    display_prompt = f"**[{st.session_state.user_role}]**: {prompt}" # 화면 출력용 (굵게)
+    user_log_content = f"[{st.session_state.user_role}]: {prompt}" # 로그 저장용 (일반 텍스트)
+
+    st.chat_message("user").markdown(display_prompt)
 
     # 2. 전체 로그를 파일에서 읽어와서 사용자 메시지 추가
     updated_messages = load_chat_log()
-    updated_messages.append({"role": "user", "content": user_display_prompt})
+    updated_messages.append({"role": "user", "content": user_log_content})
     
     # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
