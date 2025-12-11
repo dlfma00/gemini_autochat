@@ -42,7 +42,7 @@ def parse_and_display_response(response_text, is_initial=False):
 # ===================================================
 
 st.set_page_config(page_title="7인 자캐 단톡방 시뮬레이터", layout="wide")
-st.title("📱 7인 자캐 단톡방 시뮬레이터")
+st.title("괴동챗봇(아직미완성)")
 
 # ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
 try:
