@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import sys
 import re # 파싱(분리)을 위해 re 모듈 사용
-
+import os
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
 # ===================================================
@@ -51,14 +51,21 @@ except KeyError:
     st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
     st.stop()
 
-# 2.1. 텍스트 파일에서 캐릭터 설정 데이터 로드
+# 현재 작업 디렉토리 경로와 파일 이름을 결합합니다.
+CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
+
 try:
-    with open('characters.txt', 'r', encoding='utf-8') as f:
+    # 🚨 파일 경로를 명시적으로 지정하여 파일을 엽니다.
+    with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
         CHARACTERS = f.read()
 except FileNotFoundError:
-    st.error("오류: characters.txt 파일을 찾을 수 없습니다. GitHub에 업로드했는지 확인해주세요.")
+    # 파일이 존재하지 않을 때의 오류 메시지
+    st.error("오류: characters.txt 파일을 찾을 수 없습니다. GitHub에 올바른 경로로 업로드되었는지 확인해주세요.")
     st.stop()
-
+except Exception as e:
+    # 기타 파일 읽기 오류 처리
+    st.error(f"파일을 읽는 도중 예상치 못한 오류 발생: {e}")
+    st.stop()
 # ===================================================
 # ⭐️ 3. 모델 초기화 함수 (API 호출 최적화)
 # ===================================================
