@@ -11,7 +11,7 @@ st.title("📱 7인 자캐 단톡방 시뮬레이터")
 
 # ⚠️ 여기에 발급받은 API 키를 넣으세요! (Streamlit Cloud 배포 시는 보안상 별도 처리 필요)
 # 지금은 테스트를 위해 여기에 직접 넣어둡니다.
-API_KEY = "AIzaSyD81gHw7VzEcY0mAiNrtBrBdzfZaH1opEY" 
+API_KEY = "" 
 
 # 자캐 6명 설정
 CHARACTERS = """
