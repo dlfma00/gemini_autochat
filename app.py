@@ -103,11 +103,11 @@ def parse_and_display_response(response_text, is_initial=False):
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
-            clean_dialogue = markdown_pattern.sub('', dialogue).strip()
+            # 🚨 출력 시 1초 지연 추가 (현실감 부여)
             time.sleep(1) 
             with st.chat_message("assistant"):
                 # 🚨🚨🚨 볼드체 중복 오류 해결: 이름(speaker)에만 볼드체 적용 🚨🚨🚨
-                st.markdown(f"**{speaker}** {dialogue.strip()}")
+                st.markdown(f"{speaker} {dialogue.strip()}")
             
             messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue.strip()}"})
             
