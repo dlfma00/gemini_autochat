@@ -73,4 +73,50 @@ if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key=
         st.session_state.messages = []
         st.session_state.chat = initialize_model(user_role)
         
-        st.session_state.initial
+        st.session_state.initial_message_sent = False
+        st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
+    else:
+        st.sidebar.warning("역할을 먼저 입력해 주세요.")
+    
+# 3. 대화 기록 표시 및 입장 메시지 전송
+if 'chat' in st.session_state:
+    # 대화 기록 표시
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 입장 메시지 자동 전송 (최초 1회)
+    if not st.session_state.initial_message_sent:
+        initial_input = f"(시스템 알림: '{user_role}'님이 입장하셨습니다.)"
+        with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
+            try:
+                response = st.session_state.chat.send_message(initial_input)
+                
+                # 메시지 저장
+                st.session_state.messages.append({"role": "user", "content": initial_input})
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                st.session_state.initial_message_sent = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"API 호출 중 오류 발생: {e}")
+                st.stop()
+
+
+    # 4. 사용자 입력 처리
+    if prompt := st.chat_input("채팅을 입력하세요..."):
+        # 사용자 메시지 저장
+        st.chat_message("user").markdown(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Gemini API 호출 및 응답
+        with st.spinner('캐릭터들이 대화 중...'):
+            try:
+                response = st.session_state.chat.send_message(prompt)
+            except Exception as e:
+                st.error(f"API 호출 중 오류 발생: {e}")
+                st.stop()
+        
+        # AI 응답을 화면에 표시 및 저장
+        with st.chat_message("assistant"):
+            st.markdown(response.text)
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
