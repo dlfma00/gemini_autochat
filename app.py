@@ -106,7 +106,7 @@ def parse_and_display_response(response_text, is_initial=False):
             # 🚨 출력 시 1초 지연 추가 (현실감 부여)
             time.sleep(1) 
             with st.chat_message("assistant"):
-                st.markdown(f"**{speaker}** {dialogue}") 
+                st.markdown(f"**{speaker}** {dialogue.strip()}")
             
             messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
             
