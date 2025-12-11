@@ -92,17 +92,22 @@ def restore_chat_history(chat_session):
 
 # Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하고 출력하는 함수
 def parse_and_display_response(response_text, is_initial=False):
-    pattern = re.compile(r'\n*(\[[^\]]+\]:\s*)') 
+    # 🚨🚨🚨 파싱 안정성 강화: 패턴 앞뒤의 공백/줄바꿈을 유연하게 처리
+    pattern = re.compile(r'\s*(\[[^\]]+\]:\s*)') 
     
     # 🚨🚨🚨 새로 추가: 모든 마크다운 서식을 제거하는 정규식 (볼드, 이탤릭, 수평선 방지)
-    # 이 정규식은 [이름] 안의 괄호는 건드리지 않고, 대화 내용의 *, **, __, --- 등을 제거함.
     markdown_pattern = re.compile(r'(\*\*|\*|__|___|---|___)') 
     
     parts = pattern.split(response_text)
     
     messages_to_save = []
     
+    # 🚨🚨🚨 핵심 수정: 인덱스 에러 방지 및 파싱 로직 안정화
     for i in range(1, len(parts), 2):
+        
+        if i + 1 >= len(parts):
+            break # 대사 내용이 없는 경우 루프 중단
+            
         speaker = parts[i].strip() # [강건우]:
         dialogue = parts[i+1].strip() # 대화 내용
         
@@ -110,15 +115,15 @@ def parse_and_display_response(response_text, is_initial=False):
             
             # 1. 정규식으로 볼드/이탤릭 마크 및 수평선 유발 문자열 강제 제거
             clean_dialogue = markdown_pattern.sub('', dialogue).strip()
-            # 🚨🚨🚨 이름(speaker)에서도 모든 마크다운 문법 제거 🚨🚨🚨
+            # 이름(speaker)에서도 모든 마크다운 문법 제거
             clean_speaker = markdown_pattern.sub('', speaker).strip() 
             
             time.sleep(1) 
             with st.chat_message("assistant"):
-                # 🚨🚨🚨 최종 수정: 출력 시 마크다운(볼드체) 없이 일반 텍스트로만 출력
+                # 🚨 최종 수정: 출력 시 마크다운(볼드체) 없이 일반 텍스트로만 출력
                 st.markdown(f"{clean_speaker} {clean_dialogue}")
             
-            # 🚨🚨🚨 저장 시에도 볼드체 마크 없이 일반 텍스트로 저장 🚨🚨🚨
+            # 🚨 저장 시에도 볼드체 마크 없이 일반 텍스트로 저장
             messages_to_save.append({"role": "assistant", "content": f"{clean_speaker} {clean_dialogue}"})
             
     # 입장 메시지 처리 후 재실행 로직
