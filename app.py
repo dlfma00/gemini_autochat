@@ -3,6 +3,8 @@ import google.generativeai as genai
 import sys
 import re # 파싱(분리)을 위해 re 모듈 사용
 import os
+import time # 세션 분리를 위해 time 모듈 사용
+
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
 # ===================================================
@@ -16,64 +18,56 @@ def parse_and_display_response(response_text, is_initial=False):
     
     messages_to_save = []
     
-    # parts 리스트: 빈 문자열, [이름]:, 대사, [이름]:, 대사 순서로 구성됨
     for i in range(1, len(parts), 2):
         speaker = parts[i].strip() # [강건우]:
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
-            # 말풍선에 출력
             with st.chat_message("assistant"):
                 st.markdown(f"**{speaker}** {dialogue}") 
             
-            # 세션 상태에 저장할 형식
             messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
             
-    # 🚨 API 요청 최적화: 입장 메시지 처리 후 재실행 (st.rerun)은 여기서 처리
+    # API 요청 최적화: 입장 메시지 처리 후 재실행은 여기서 처리
     if is_initial:
         st.session_state.messages.extend(messages_to_save)
         st.session_state.initial_message_sent = True
-        st.rerun() # 앱을 새로고침하여 초기 대화를 화면에 반영
+        st.rerun() 
 
     return messages_to_save
 
 # ===================================================
-# ⭐️ 2. 기본 설정 및 데이터
+# ⭐️ 2. 모델 설정 및 프롬프트 생성 (API 요청 최적화)
 # ===================================================
 
-st.set_page_config(page_title="7인 자캐 단톡방 시뮬레이터", layout="wide")
-st.title("괴동챗봇(아직미완성)")
-
-# ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
-try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-except KeyError:
-    st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
-    st.stop()
-
-# 현재 작업 디렉토리 경로와 파일 이름을 결합합니다.
-CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
-
-try:
-    # 🚨 파일 경로를 명시적으로 지정하여 파일을 엽니다.
-    with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
-        CHARACTERS = f.read()
-except FileNotFoundError:
-    # 파일이 존재하지 않을 때의 오류 메시지
-    st.error("오류: characters.txt 파일을 찾을 수 없습니다. GitHub에 올바른 경로로 업로드되었는지 확인해주세요.")
-    st.stop()
-except Exception as e:
-    # 기타 파일 읽기 오류 처리
-    st.error(f"파일을 읽는 도중 예상치 못한 오류 발생: {e}")
-    st.stop()
-# ===================================================
-# ⭐️ 3. 모델 초기화 함수 (API 호출 최적화)
-# ===================================================
+# 🚨 파일 읽기 및 프롬프트 생성을 캐시하여 API 호출 시 토큰 낭비 방지
+@st.cache_resource 
+def get_system_prompt():
+    # 2.1. 텍스트 파일에서 캐릭터 설정 데이터 로드 (파일 경로 명시적 지정)
+    CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
+    try:
+        with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
+            CHARACTERS = f.read()
+    except Exception as e:
+        st.error(f"캐릭터 설정 파일 로드 오류: {e}")
+        st.stop()
+        
+    return CHARACTERS
 
 # API 호출을 최소화하기 위해 @st.cache_resource 사용
 @st.cache_resource 
-def initialize_model(user_role):
+def initialize_model(user_role, session_id): # 🚨 세션 분리 위해 session_id 인자 추가
+    # ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
+    try:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+    except KeyError:
+        st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
+        st.stop()
+        
     genai.configure(api_key=API_KEY)
+    
+    # 캐시된 캐릭터 설정을 가져옵니다.
+    CHARACTERS = get_system_prompt()
     
     system_prompt = f"""
     [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 2~4명이 대화에 참여하세요. 출력 형식은 반드시 "[이름]: 대사"로만 작성합니다. (지문 금지, 구어체 사용)
@@ -94,6 +88,13 @@ def initialize_model(user_role):
 # ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
 # ===================================================
 
+st.set_page_config(page_title="7인 자캐 단톡방 시뮬레이터", layout="wide")
+st.title("📱 7인 자캐 단톡방 시뮬레이터")
+
+# 🚨 최상위에서 messages 리스트가 없으면 강제 초기화 (세션 공유 방지 1)
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+
 # 1. 사용자 역할 선택 UI (사이드바)
 role_options = ["어리버리한 신입 부원", "정체불명의 해킹범", "대화는 안 통하는 '귀신'", "직접 입력..."]
 selected_role = st.sidebar.selectbox("당신의 정체를 선택하세요:", role_options)
@@ -107,7 +108,12 @@ else:
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role:
         st.session_state.messages = []
-        st.session_state.chat = initialize_model(user_role)
+        
+        # 🚨 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
+        unique_session_id = time.time()
+        
+        st.session_state.chat = initialize_model(user_role, unique_session_id)
+        
         st.session_state.initial_message_sent = False
         st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
     else:
@@ -127,10 +133,9 @@ if 'chat' in st.session_state:
             try:
                 response = st.session_state.chat.send_message(initial_input)
                 
-                # 사용자 입장 메시지 저장
                 st.session_state.messages.append({"role": "user", "content": initial_input})
                 
-                # 🚨 파싱 함수를 통해 입장 메시지 저장 및 출력 후 st.rerun() 호출
+                # 파싱 함수를 통해 입장 메시지 저장 및 출력 후 st.rerun() 호출
                 parse_and_display_response(response.text, is_initial=True) 
                 
             except Exception as e:
