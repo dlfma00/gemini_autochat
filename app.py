@@ -4,6 +4,7 @@ import sys
 import re # 파싱(분리)을 위해 re 모듈 사용
 import os
 import time # 세션 분리를 위해 time 모듈 사용
+import uuid # 모델 캐시 무효화를 위해 uuid 모듈 사용
 
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
@@ -24,7 +25,7 @@ def parse_and_display_response(response_text, is_initial=False):
         
         if dialogue: 
 
-            time.sleep(2) # 🚨 2초 지연 유지
+            time.sleep(1) # 🚨 1초 지연 추가 (현실감 부여)
             with st.chat_message("assistant"):
                 st.markdown(f"**{speaker}** {dialogue}") 
             
@@ -57,12 +58,12 @@ def get_system_prompt():
     return CHARACTERS
 
 # ===================================================
-# ⭐️ 3. 모델 초기화 함수 (API 호출 최적화)
+# ⭐️ 3. 모델 초기화 함수 (API 호출 최적화 및 세션 분리)
 # ===================================================
 
 # API 호출을 최소화하기 위해 @st.cache_resource 사용
 @st.cache_resource 
-def initialize_model(user_role, session_id): # 세션 분리 위해 session_id 인자 사용
+def initialize_model(user_role, unique_uuid): # 🚨 uuid_key를 캐시 무효화 인자로 사용
     # ⚠️ 보안된 API 키 로드 (Streamlit Secrets 사용)
     try:
         API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -79,6 +80,10 @@ def initialize_model(user_role, session_id): # 세션 분리 위해 session_id �
     [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 1~6명이 대화에 참여하세요. 한 사람이 여러 번 말할 수도 있습니다.
     각 캐릭터의 대사는 띄어쓰기 포함 최대 15자를 넘지 않도록 합니다.** (단, ㅋㅋㅋㅋㅋㅋㅋㅋㅋ 등 감정표현이 길어지는 경우나, 말을 길게 해야 할 맥락이 명확한 경우에만 예외적으로 10자를 초과할 수 있습니다.)
     
+    [자발적 대화 규칙]:
+    1.  사용자가 입력하지 않더라도, **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작할 수 있습니다.
+    2.  **예시 주제:** "배고파", "오늘 숙제 했냐?", "내일 모임 몇 시?", "뭐 재밌는 일 없음?" 등 고등학생들이 나눌법한 일상적인 대화를 자유롭게 던지세요.
+
     [대화 스타일 - 최우선 규칙]: 모든 대사는 **카톡, 트위터, SNS에서 친구끼리 대화하듯** 극도로 비격식적이고 구어체로 작성되어야 합니다.
     1. 문장부호, 띄어쓰기, 조사는 **의도적으로 생략하거나 축약**해야 합니다. 강조합니다. 문장 끝에 점을 찍지 마세요.
     2. 축약어(줄임말), 초성('ㅇㅋ', 'ㄱㄱ'), 밈, 이모티콘('ㅋㅋ', 'ㅠㅠ', 'ㅇㅈ')을 **적극적으로** 사용하세요.
@@ -115,7 +120,7 @@ st.title("괴동챗봇(아직미완성)")
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# 1. 사용자 역할 선택 UI (사이드바) -> 🚨 이름 입력으로 대체
+# 1. 사용자 역할/이름 입력 UI (사이드바)
 user_role = st.sidebar.text_input("당신의 이름을 입력하세요:")
 
 
@@ -123,33 +128,36 @@ user_role = st.sidebar.text_input("당신의 이름을 입력하세요:")
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role:
         st.session_state.messages = []
+        st.session_state.user_role = user_role # 🚨 현재 사용자 이름을 세션에 저장
         
         # 새로운 세션 ID를 생성하여 캐시 분리 강제 (멀티유저 분리)
-        unique_session_id = time.time()
+        unique_session_id = str(uuid.uuid4())
         
         st.session_state.chat = initialize_model(user_role, unique_session_id)
         
         st.session_state.initial_message_sent = False
-        # 🚨 역할 대신 입력한 이름을 그대로 사용
         st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
     else:
-        st.sidebar.warning("이름을 먼저 입력해 주세요.")
+        st.sidebar.warning("이름을 먼저 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
     
 # 3. 대화 기록 표시 및 입장 메시지 전송
 if 'chat' in st.session_state:
     # 대화 기록 표시
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            # 🚨 사용자 이름이 포함된 content를 그대로 출력
+            st.markdown(message["content"]) 
 
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
-        initial_input = f"(시스템 알림: '{user_role}'님이 입장하셨습니다.)"
+        initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" # 🚨 세션에 저장된 이름 사용
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
                 response = st.session_state.chat.send_message(initial_input)
                 
-                st.session_state.messages.append({"role": "user", "content": initial_input})
+                # 🚨 사용자 메시지도 [이름] 형식을 사용하도록 저장 (멀티유저 효과)
+                user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
+                st.session_state.messages.append({"role": "user", "content": user_display_input})
                 
                 # 파싱 함수를 통해 입장 메시지 저장 및 출력 후 st.rerun() 호출
                 parse_and_display_response(response.text, is_initial=True) 
@@ -166,14 +174,18 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
         st.warning("먼저 이름을 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
         st.stop()
         
-    # 사용자 메시지 저장
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # 🛠️ 멀티유저 효과를 위해 사용자 이름 태그를 붙여서 저장
+    user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
+        
+    # 사용자 메시지 저장 및 표시
+    st.chat_message("user").markdown(user_display_prompt)
+    st.session_state.messages.append({"role": "user", "content": user_display_prompt})
 
     # Gemini API 호출 및 응답
     with st.spinner('캐릭터들이 대화 중...'):
         try:
-            response = st.session_state.chat.send_message(prompt)
+            # 🚨 Gemini에게는 순수한 대화 내용만 전송 (모델이 [사용자이름]: 형식을 인식하도록 유도)
+            response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
         except Exception as e:
             st.error(f"API 호출 중 오류 발생: {e}")
