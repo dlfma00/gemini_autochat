@@ -6,6 +6,7 @@ import os
 import time 
 import uuid 
 import json 
+
 # ===================================================
 # ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수
 # ===================================================
@@ -20,6 +21,7 @@ CUSTOM_CSS = """
     margin-bottom: 10px;
 }
 /* 사용자(role="user") 말풍선에만 노란색 스타일 적용 */
+/* data-user="true"는 사용자가 직접 입력한 메시지에만 붙는 속성 */
 div[data-testid="stChatMessage"][data-state="final"][data-user="true"] {
     background-color: #fffbdf; /* 연한 노란색 */
     border-left: 5px solid #ffcc00; /* 왼쪽에 강조선을 추가 */
@@ -78,7 +80,7 @@ def parse_and_display_response(response_text, is_initial=False):
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
-        st.session_state.messages.extend(messages_to_save)
+        # 이 부분은 API 호출 성공 후 즉시 rerurn을 유발하여 로그를 반영합니다.
         st.session_state.initial_message_sent = True
         st.rerun() 
 
@@ -129,7 +131,7 @@ def initialize_model(user_role, unique_uuid):
     2. 축약어(줄임말), 초성('ㅇㅋ', 'ㄱㄱ'), 밈, 이모티콘('ㅋㅋ', 'ㅠㅠ', 'ㅇㅈ')을 **적극적으로** 사용하세요.
     3. 필요시 급하게 타이핑한 듯한 **오타나 짤막한 감탄사**('아', '헐', '뭐야')가 포함될 수 있습니다.
     4. 종종 사용자가 입력한 말과 관계없이 **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작하세요.
-        **예시 주제:** "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?", "자 게임을 시작한다", "9모 어려웠다 그치", "아...시끄러워" 
+        **예시 주제:** "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?"
         특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 
         절대 **사용자만 의식하지 않고** **주로 본인들끼리 대화**하세요.
     5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 
@@ -145,6 +147,7 @@ def initialize_model(user_role, unique_uuid):
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
+    # 캐시 무효화를 위해 history는 비워둠
     return model.start_chat(history=[])
 
 # ===================================================
@@ -176,6 +179,7 @@ if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key=
         
         unique_session_id = str(uuid.uuid4())
         
+        # 모델 재초기화
         st.session_state.chat = initialize_model(st.session_state.user_role, unique_session_id)
         
         st.session_state.initial_message_sent = False
@@ -189,15 +193,12 @@ if 'chat' in st.session_state:
     
     # 🚨 파일 로그를 기반으로 대화 기록 표시
     for message in current_log:
-        # role은 이제 출력에 중요하지 않으므로, content의 이름 태그를 통해 구분됨.
-        # Streamlit이 content의 **[이름]** 형식을 파싱하지 못하므로, role을 고정하지 않고 content를 출력합니다.
-        
-        # 🚨 여기서 사용자 입력과 AI 응답의 role을 강제로 분리하여 CSS를 적용합니다.
+        # role에 따라 CSS가 구분됩니다.
         if message["role"] == "assistant":
              with st.chat_message("assistant"):
                 st.markdown(message["content"])
         else:
-             with st.chat_message("user"): # 🚨 CSS 적용을 위해 role을 "user"로 설정
+             with st.chat_message("user"): # CSS 적용을 위해 role을 "user"로 설정
                 st.markdown(message["content"])
             
     # 입장 메시지 자동 전송 (최초 1회)
@@ -207,17 +208,17 @@ if 'chat' in st.session_state:
             try:
                 response = st.session_state.chat.send_message(initial_input)
                 
-                # 🚨 1. 사용자 메시지 (입장)를 로그에 추가
+                # 1. 사용자 메시지 (입장)를 로그에 추가
                 user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
                 
-                # 🚨 2. AI 응답 파싱 및 로그에 추가
+                # 2. AI 응답 파싱 및 로그에 추가
                 parsed_messages = parse_and_display_response(response.text)
                 
-                # 🚨 3. 파일 로그에 저장
+                # 3. 파일 로그에 저장
                 new_log = current_log + [{"role": "user", "content": user_display_input}] + parsed_messages
                 save_chat_log(new_log)
 
-                # 🚨 4. 세션 상태 업데이트 후 재실행
+                # 4. 세션 상태 업데이트 후 재실행
                 st.session_state.initial_message_sent = True
                 st.rerun() 
                 
@@ -226,7 +227,7 @@ if 'chat' in st.session_state:
                 st.stop()
 
 # ===================================================
-# ⭐️ 4. 사용자 입력 처리 (파일의 가장 아래에 위치) 수정
+# ⭐️ 5. 사용자 입력 처리 (파일의 가장 아래에 위치)
 # ===================================================
 
 if prompt := st.chat_input("채팅을 입력하세요..."):
@@ -235,24 +236,22 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
         st.warning("먼저 이름을 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
         st.stop()
         
-    # 1. 사용자 메시지 포맷팅
+    # 1. 사용자 메시지 포맷팅 및 즉시 출력 
+    # 🚨 time.sleep에 관계없이 사용자 메시지가 먼저 보이게 합니다.
     user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
-        
-    # 🚨🚨🚨 (수정된 순서) 🚨🚨🚨
-    # 1. 화면에 사용자 메시지를 즉시 출력합니다. (여기까지는 시간 지연 없음)
     st.chat_message("user").markdown(user_display_prompt)
 
     # 2. 전체 로그를 파일에서 읽어와서 사용자 메시지 추가
     updated_messages = load_chat_log()
     updated_messages.append({"role": "user", "content": user_display_prompt})
-    # 🚨🚨🚨 (수정된 순서 끝) 🚨🚨🚨
-
-
-    # 3. Gemini API 호출
-    # 이 스피너가 활성화된 상태에서, 아래 API 호출 및 time.sleep이 실행됩니다.
+    
+    # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
         try:
-            # ... (Gemini API 호출 로직 유지) ...
+            response = st.session_state.chat.send_message(prompt) 
+            full_response_text = response.text 
+            
+            # 🚨🚨🚨 full_response_text를 사용하고 저장하는 모든 로직은 try 안에서 실행됩니다.
             
             # 4. AI 응답 파싱 및 로그에 추가
             parsed_messages = parse_and_display_response(full_response_text)
@@ -265,5 +264,6 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
             st.rerun() 
             
         except Exception as e:
+            # API 호출이 실패하면 full_response_text는 정의되지 않은 채 스크립트가 멈춥니다.
             st.error(f"API오류발생: {e}")
             st.stop()
