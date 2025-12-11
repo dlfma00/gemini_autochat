@@ -225,7 +225,10 @@ if 'chat' in st.session_state:
                 st.error(f"API 호출 중 오류 발생: {e}")
                 st.stop()
 
-# 4. 사용자 입력 처리 (입력창이 항상 보이도록 조건문 밖, 파일의 가장 아래에 위치)
+# ===================================================
+# ⭐️ 4. 사용자 입력 처리 (파일의 가장 아래에 위치) 수정
+# ===================================================
+
 if prompt := st.chat_input("채팅을 입력하세요..."):
     
     if 'chat' not in st.session_state:
@@ -235,25 +238,31 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
     # 1. 사용자 메시지 포맷팅
     user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
         
+    # 🚨🚨🚨 (수정된 순서) 🚨🚨🚨
+    # 1. 화면에 사용자 메시지를 즉시 출력합니다. (여기까지는 시간 지연 없음)
+    st.chat_message("user").markdown(user_display_prompt)
+
     # 2. 전체 로그를 파일에서 읽어와서 사용자 메시지 추가
     updated_messages = load_chat_log()
     updated_messages.append({"role": "user", "content": user_display_prompt})
-    
+    # 🚨🚨🚨 (수정된 순서 끝) 🚨🚨🚨
+
+
     # 3. Gemini API 호출
+    # 이 스피너가 활성화된 상태에서, 아래 API 호출 및 time.sleep이 실행됩니다.
     with st.spinner('캐릭터들이 대화 중...'):
         try:
-            response = st.session_state.chat.send_message(prompt) 
-            full_response_text = response.text 
-        except Exception as e:
-            st.error(f"API 호출 중 오류 발생: {e}")
-            st.stop()
-    
-    # 4. AI 응답 파싱 및 로그에 추가
-    parsed_messages = parse_and_display_response(full_response_text)
-    updated_messages.extend(parsed_messages)
-    
-    # 5. 🚨 모든 메시지를 파일에 최종 저장
-    save_chat_log(updated_messages) 
+            # ... (Gemini API 호출 로직 유지) ...
+            
+            # 4. AI 응답 파싱 및 로그에 추가
+            parsed_messages = parse_and_display_response(full_response_text)
+            updated_messages.extend(parsed_messages)
+            
+            # 5. 모든 메시지를 파일에 최종 저장
+            save_chat_log(updated_messages) 
 
-    # 6. 🚨 앱 재실행(Rerun)하여 다른 사용자도 새 기록을 로드하게 유도
-    st.rerun()
+            # 6. 앱 재실행(Rerun)하여 다른 사용자도 새 기록을 로드하게 유도
+            st.rerun() 
+            
+        except Exception as e:
+            # ... (오류 처리 유지) ...
