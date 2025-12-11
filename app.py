@@ -62,17 +62,15 @@ def format_log_for_gemini(log_messages):
     history = []
     for msg in recent_log: 
         if msg["role"] == "assistant":
-                    role = "model"
-                else:
-                    # 사용자 입력 (user)은 그대로 'user' 역할 유지
-                    role = "user"
-                
-                content = msg["content"]
-                
-                history.append({
-                    "role": role,
-                    "parts": [{"text": content}]
-                })
+            role = "model"
+        else:
+            # 사용자 입력 (user)은 그대로 'user' 역할 유지
+            role = "user"
+        content = msg["content"]
+        history.append({
+            "role": role,
+            "parts": [{"text": content}]
+        })
             return history
 
 # 🚨🚨🚨 새로 추가된 함수 2: 채팅 객체의 기록을 파일 로그로 강제 복원 (기억 주입)
