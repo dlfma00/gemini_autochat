@@ -71,7 +71,7 @@ def format_log_for_gemini(log_messages):
             "role": role,
             "parts": [{"text": content}]
         })
-            return history
+        return history
 
 # 🚨🚨🚨 새로 추가된 함수 2: 채팅 객체의 기록을 파일 로그로 강제 복원 (기억 주입)
 def restore_chat_history(chat_session):
