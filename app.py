@@ -23,6 +23,8 @@ def parse_and_display_response(response_text, is_initial=False):
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
+
+            time.sleep(2)
             with st.chat_message("assistant"):
                 st.markdown(f"**{speaker}** {dialogue}") 
             
