@@ -67,11 +67,18 @@ if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작"):
         st.sidebar.warning("역할을 먼저 입력해 주세요.")
 
 # 2. 대화 기록 표시
-if 'chat' in st.session_state:
-    # 대화 기록 표시
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작"):
+    if user_role:
+        # 1. 메시지 기록을 먼저 비웁니다. (KeyError 방지)
+        st.session_state.messages = []
+        
+        # 2. 비워진 기록으로 모델을 초기화합니다.
+        st.session_state.chat = initialize_model(user_role)
+        
+        st.session_state.initial_message_sent = False
+        st.sidebar.success(f"✅ 당신은 [{user_role}]로 입장합니다.")
+    else:
+        st.sidebar.warning("역할을 먼저 입력해 주세요.")
 
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
