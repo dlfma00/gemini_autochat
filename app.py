@@ -61,8 +61,12 @@ def format_log_for_gemini(log_messages):
     
     history = []
     for msg in recent_log: 
-        # AI 응답은 "assistant"로, 사용자 입력은 "user"로 분류
-        role = msg["role"] if msg["role"] == "assistant" else "user"
+if msg["role"] == "assistant":
+            role = "model"
+        else:
+            # 사용자 입력 (user)은 그대로 'user' 역할 유지
+            role = "user"
+        
         content = msg["content"]
         
         history.append({
