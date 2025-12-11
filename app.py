@@ -89,7 +89,7 @@ def initialize_model(user_role, session_id): # 🚨 세션 분리 위해 session
 # ===================================================
 
 st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
-st.title("📱 7인 자캐 단톡방 시뮬레이터")
+st.title("괴동챗봇(아직미완성)")
 
 # 🚨 최상위에서 messages 리스트가 없으면 강제 초기화 (세션 공유 방지 1)
 if 'messages' not in st.session_state:
