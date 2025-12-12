@@ -8,7 +8,7 @@ import uuid
 import json 
 
 # ===================================================
-# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수
+# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수 (기억력 및 토큰 최적화 로직 추가)
 # ===================================================
 
 # 🚨 CSS 정의: 사용자(user) 말풍선 색상을 노란색 계열로 변경
@@ -53,6 +53,38 @@ def save_chat_log(messages):
 def initialize_shared_log():
     save_chat_log([])
 
+# 🚨🚨🚨 핵심 기능 1: Gemini History 형식으로 변환 및 기록 제한 (30개) + Role 변환
+def format_log_for_gemini(log_messages):
+    
+    # 🚨 핵심: 로그의 마지막 30개 메시지만 선택하여 토큰 사용량 최적화
+    recent_log = log_messages[-30:] 
+    
+    history = []
+    for msg in recent_log: 
+        # Role 오류 수정: 'assistant'를 'model' 역할로 변환하여 API 호환성 확보
+        if msg["role"] == "assistant":
+            role = "model"
+        else:
+            # 사용자 입력 (user)은 그대로 'user' 역할 유지
+            role = "user"
+        
+        content = msg["content"]
+        
+        history.append({
+            "role": role,
+            "parts": [{"text": content}]
+        })
+    return history
+
+# 🚨🚨🚨 핵심 기능 2: 채팅 객체의 기록을 파일 로그로 강제 복원 (기억 주입)
+def restore_chat_history(chat_session):
+    # 파일에서 전체 로그를 읽어와 Gemini 포맷으로 변환 (이 과정에서 30개 제한 적용)
+    log = load_chat_log()
+    history = format_log_for_gemini(log)
+    
+    # 채팅 세션의 내부 history를 강제로 업데이트 (모델에게 기억을 주입)
+    chat_session.history = history
+
 
 # ===================================================
 # ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
@@ -60,27 +92,42 @@ def initialize_shared_log():
 
 # Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하고 출력하는 함수
 def parse_and_display_response(response_text, is_initial=False):
-    pattern = re.compile(r'\n*(\[[^\]]+\]:\s*)') 
+    # 🚨🚨🚨 파싱 안정성 강화: 패턴 앞뒤의 공백/줄바꿈을 유연하게 처리
+    pattern = re.compile(r'\s*(\[[^\]]+\]:\s*)') 
+    
+    # 🚨🚨🚨 새로 추가: 모든 마크다운 서식을 제거하는 정규식 (볼드, 이탤릭, 수평선 방지)
+    markdown_pattern = re.compile(r'(\*\*|\*|__|___|---|___)') 
     
     parts = pattern.split(response_text)
     
     messages_to_save = []
     
+    # 🚨🚨🚨 핵심 수정: 인덱스 에러 방지 및 파싱 로직 안정화
     for i in range(1, len(parts), 2):
+        
+        if i + 1 >= len(parts):
+            break # 대사 내용이 없는 경우 루프 중단
+            
         speaker = parts[i].strip() # [강건우]:
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
-            # 🚨 출력 시 1초 지연 추가 (현실감 부여)
+            
+            # 1. 정규식으로 볼드/이탤릭 마크 및 수평선 유발 문자열 강제 제거
+            clean_dialogue = markdown_pattern.sub('', dialogue).strip()
+            # 이름(speaker)에서도 모든 마크다운 문법 제거
+            clean_speaker = markdown_pattern.sub('', speaker).strip() 
+            
             time.sleep(1) 
             with st.chat_message("assistant"):
-                st.markdown(f"**{speaker}** {dialogue}") 
+                # 🚨 최종 수정: 출력 시 마크다운(볼드체) 없이 일반 텍스트로만 출력
+                st.markdown(f"{clean_speaker} {clean_dialogue}")
             
-            messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
+            # 🚨 저장 시에도 볼드체 마크 없이 일반 텍스트로 저장
+            messages_to_save.append({"role": "assistant", "content": f"{clean_speaker} {clean_dialogue}"})
             
     # 입장 메시지 처리 후 재실행 로직
     if is_initial:
-        # 이 부분은 API 호출 성공 후 즉시 rerurn을 유발하여 로그를 반영합니다.
         st.session_state.initial_message_sent = True
         st.rerun() 
 
@@ -102,19 +149,25 @@ def get_system_prompt():
         
     return CHARACTERS
 
+# 🚨🚨🚨 새로 추가: API 설정만 캐시 (모델 초기화 안정성 강화)
+@st.cache_resource
+def setup_genai():
+    try:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+    except KeyError:
+        st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
+        st.stop()
+    genai.configure(api_key=API_KEY)
+
 # ===================================================
 # ⭐️ 3. 모델 초기화 함수 (API 호출 최적화 및 세션 분리)
 # ===================================================
 
 @st.cache_resource 
 def initialize_model(user_role, unique_uuid): 
-    try:
-        API_KEY = st.secrets["GEMINI_API_KEY"]
-    except KeyError:
-        st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
-        st.stop()
-        
-    genai.configure(api_key=API_KEY)
+    
+    # 🚨 API 설정 분리 적용
+    setup_genai()
     
     CHARACTERS = get_system_prompt()
     
@@ -206,10 +259,13 @@ if 'chat' in st.session_state:
         initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" 
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
+                # 🚨🚨🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입) 🚨🚨🚨
+                restore_chat_history(st.session_state.chat)
+                
                 response = st.session_state.chat.send_message(initial_input)
                 
                 # 1. 사용자 메시지 (입장)를 로그에 추가
-                user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
+                user_display_input = f"[{st.session_state.user_role}]: (입장)" # 볼드 마크 제거
                 
                 # 2. AI 응답 파싱 및 로그에 추가
                 parsed_messages = parse_and_display_response(response.text)
@@ -238,16 +294,21 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
         
     # 1. 사용자 메시지 포맷팅 및 즉시 출력 
     # 🚨 time.sleep에 관계없이 사용자 메시지가 먼저 보이게 합니다.
-    user_display_prompt = f"**[{st.session_state.user_role}]**: {prompt}"
-    st.chat_message("user").markdown(user_display_prompt)
+    display_prompt = f"**[{st.session_state.user_role}]**: {prompt}" # 화면 출력용 (굵게)
+    user_log_content = f"[{st.session_state.user_role}]: {prompt}" # 로그 저장용 (일반 텍스트)
+
+    st.chat_message("user").markdown(display_prompt)
 
     # 2. 전체 로그를 파일에서 읽어와서 사용자 메시지 추가
     updated_messages = load_chat_log()
-    updated_messages.append({"role": "user", "content": user_display_prompt})
+    updated_messages.append({"role": "user", "content": user_log_content})
     
     # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
         try:
+            # 🚨 모델의 history를 파일 로그로 강제 복원 (기억 주입)
+            restore_chat_history(st.session_state.chat)
+            
             response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
             
