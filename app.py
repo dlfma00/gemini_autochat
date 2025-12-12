@@ -262,10 +262,18 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
             # API 호출
             response = st.session_state.chat.send_message(prompt) 
             full_response_text = response.text 
+            # 🚨🚨🚨 임시 디버깅 코드 🚨🚨🚨
+            # 1. API 응답 텍스트 확인
+            st.info("API 응답 텍스트 (Raw Response):")
+            st.code(full_response_text)
             
-            # 4. AI 응답 파싱 및 로그에 추가
-            # parse_and_display_response는 이제 출력하지 않고 메시지 리스트만 반환합니다.
+            # 2. 파싱 시도
             parsed_messages = parse_and_display_response(full_response_text)
+            
+            # 3. 파싱 결과 확인
+            st.info(f"파싱된 메시지 수: {len(parsed_messages)}")
+            # 🚨🚨🚨 임시 디버깅 코드 끝 🚨🚨🚨
+            
             updated_messages.extend(parsed_messages)
             
             # 5. 모든 메시지를 파일에 최종 저장
