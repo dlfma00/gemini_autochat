@@ -65,8 +65,7 @@ def parse_and_display_response(response_text):
     """
     Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하고 저장할 메시지 리스트를 반환합니다.
     """
-    pattern = re.compile(r'\n*(\[[^\]]+\]:\s*)') 
-    
+    pattern = re.compile(r'\n*(\[[^\]]+\][ :]*\s*)')    
     parts = pattern.split(response_text)
     
     messages_to_save = []
