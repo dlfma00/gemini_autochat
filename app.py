@@ -68,71 +68,9 @@ def parse_and_display_response(response_text, is_initial=False):
     
     for i in range(1, len(parts), 2):
         speaker = parts[i].strip() # [강건우]:
-        dialogue = parts[i+1].strip() # 대화 내용
-        
-        if dialogue: 
-            # 🚨 출력 시 1초 지연 추가 (현실감 부여)
-            time.sleep(1) 
-            with st.chat_message("assistant"):
-                st.markdown(f"**{speaker}** {dialogue}") 
-            
-            messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
-            
-    # 입장 메시지 처리 후 재실행 로직
-    if is_initial:
-        # 이 부분은 API 호출 성공 후 즉시 rerurn을 유발하여 로그를 반영합니다.
-        st.session_state.initial_message_sent = True
-        st.rerun() 
-
-    return messages_to_save
-
-# ===================================================
-# ⭐️ 2. 파일 로드 및 프롬프트 생성 (안정성 강화)
-# ===================================================
-
-@st.cache_resource 
-def get_system_prompt():
-    CHARACTER_FILE_PATH = os.path.join(os.getcwd(), 'characters.txt')
-    try:
-        with open(CHARACTER_FILE_PATH, 'r', encoding='utf-8') as f:
-            CHARACTERS = f.read()
-    except Exception as e:
-        st.error(f"캐릭터 설정 파일 로드 오류: {e}")
-        st.stop()
-        
-    return CHARACTERS
-
-# ===================================================
-# ⭐️ 3. 모델 초기화 함수 (API 호출 최적화 및 세션 분리)
-# ===================================================
-
-@st.cache_resource 
-def initialize_model(user_role, unique_uuid): 
-    try:
-        API_KEY = st.secrets["GEMINI_API_KEY"]
-    except KeyError:
-        st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
-        st.stop()
-        
-    genai.configure(api_key=API_KEY)
-    
-    CHARACTERS = get_system_prompt()
-    
-    system_prompt = f"""
-    [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 1~6명이 대화에 참여하세요. 한 사람이 여러 번 말할 수도 있습니다.
-    각 캐릭터의 대사는 띄어쓰기 포함 최대 15자를 넘지 않도록 합니다.** (단, ㅋㅋㅋㅋㅋㅋㅋㅋㅋ 등 감정표현이 길어지는 경우나, 말을 길게 해야 할 맥락이 명확한 경우에만 예외적으로 10자를 초과할 수 있습니다.)
-    
-    [자발적 대화 규칙]:
-    1.  사용자가 입력하지 않더라도, **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작할 수 있습니다.
-    2.  **예시 주제:** "배고파", "오늘 숙제 했냐?", "내일 모임 몇 시?", "뭐 재밌는 일 없음?" 등 고등학생들이 나눌법한 일상적인 대화를 자유롭게 던지세요.
-
-    [대화 스타일 - 최우선 규칙]: 모든 대사는 **카톡, 트위터, SNS에서 친구끼리 대화하듯** 극도로 비격식적이고 구어체로 작성되어야 합니다.
-    1. 문장부호, 띄어쓰기, 조사는 **의도적으로 생략하거나 축약**해야 합니다. 강조합니다. 문장 끝에 점을 찍지 마세요.
-    2. 축약어(줄임말), 초성('ㅇㅋ', 'ㄱㄱ'), 밈, 이모티콘('ㅋㅋ', 'ㅠㅠ', 'ㅇㅈ')을 **적극적으로** 사용하세요.
-    3. 필요시 급하게 타이핑한 듯한 **오타나 짤막한 감탄사**('아', '헐', '뭐야')가 포함될 수 있습니다.
-    4. 종종 사용자가 입력한 말과 관계없이 **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작하세요.
-        **예시 주제:** "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?"
-        특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 
+        dialogue = parts[i+1].strip한 **일상적인 잡담**을 시작하세요.
+        **예시 주제:** "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?", "야", "자 게임을 시작한다", "아 시끄러워", "나이제자러감ㅃㅃ" 
+        특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 단, 이미 했던 주제를 반복하지 마세요.
         절대 **사용자만 의식하지 않고** **주로 본인들끼리 대화**하세요.
     5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 
     
