@@ -143,6 +143,65 @@ user_role_input = st.sidebar.text_input("당신의 이름을 입력하세요:")
 
 # 2. 세션 초기화 및 새 채팅 시작 버튼
 # 🚨 파일 로그 초기화 대신 세션 상태 초기화 및 Chat 객체 재생성
+ㅊ        
+    genai.configure(api_key=API_KEY)
+    
+    CHARACTERS = get_system_prompt()
+    
+    # ... (시스템 프롬프트는 동일하게 유지) ...
+    system_prompt = f"""
+    [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 1~6명이 대화에 참여하세요. 한 사람이 여러 번 말할 수도 있습니다.
+    각 캐릭터의 대사는 띄어쓰기 포함 최대 15자를 넘지 않도록 합니다.** (단, ㅋㅋㅋㅋㅋㅋㅋㅋㅋ 등 감정표현이 길어지는 경우나, 말을 길게 해야 할 맥락이 명확한 경우에만 예외적으로 10자를 초과할 수 있습니다.)
+    
+    [대화 스타일 - 최우선 규칙]: 모든 대사는 **카톡, 트위터, SNS에서 친구끼리 대화하듯** 극도로 비격식적이고 구어체로 작성되어야 합니다.
+    1. 문장부호, 띄어쓰기, 조사는 **의도적으로 생략하거나 축약**해야 합니다. 강조합니다. 문장 끝에 점을 찍지 마세요.
+    2. 축약어(줄임말), 초성('ㅇㅋ', 'ㄱㄱ'), 밈, 이모티콘('ㅋㅋ', 'ㅠㅠ', 'ㅇㅈ')을 **적극적으로** 사용하세요.
+    3. 필요시 급하게 타이핑한 듯한 **오타나 짤막한 감탄사**('아', '헐', '뭐야')가 포함될 수 있습니다.
+    4. 종종 사용자가 입력한 말과 관계없이 **자발적으로 대화 주제를 꺼내거나** 기존 맥락과 관계없는 **일상적인 잡담**을 시작하세요.
+        **예시 주제:** "이제 뭐하지", "아 배고파", "근데니네 국어숙제 함?", "부장 내일 우리 모여?", "야", "자 게임을 시작한다", "아 시끄러워", "나이제자러감ㅃㅃ"      
+        특히, **사용자가 별 뜻이 없는 말을 했을 때는 4명 이상 반응하지 말고** 대화 주제를 전환하세요. 
+        절대 **사용자만 의식하지 않고** **주로 본인들끼리 대화**하세요.
+    5. 서로를 **적극적으로 비난**하세요. 물타기 하세요. 꼬투리를 잡아 헐뜯으세요. 서로를 의심하고 힐난하세요.
+    
+    [출력 형식]: 반드시 "[이름]: 대사"로만 작성합니다. (지문 금지)
+
+    [캐릭터 명단]: 
+    {CHARACTERS}
+    [사용자(User) 설정]: 사용자는 **'{user_role}'입니다.
+    """
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt
+    )
+    # 캐시 대신 session_state에 저장
+    return model.start_chat(history=[])
+
+# ===================================================
+# ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
+# ===================================================
+
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True) 
+
+st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
+st.title("괴동챗봇(아직미완성)")
+
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = ""
+
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+
+if 'chat' not in st.session_state:
+    st.session_state.chat = None
+# 1. 사용자 역할/이름 입력 UI (사이드바)
+user_role_input = st.sidebar.text_input("당신의 이름을 입력하세요:")
+
+
+# 2. 세션 초기화 및 새 채팅 시작 버튼
+# 🚨 파일 로그 초기화 대신 세션 상태 초기화 및 Chat 객체 재생성
+
+# 3. 대화 기록 표시 및 입장 메시지 전송
 if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role_input:
         
@@ -158,19 +217,6 @@ if 'chat' not in st.session_state or st.sidebar.button("새 채팅 시작", key=
         st.rerun()
     else:
         st.sidebar.warning("이름을 먼저 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
-    
-# 3. 대화 기록 표시 및 입장 메시지 전송
-if 'chat' in st.session_state:
-    
-    # 🚨🚨🚨 파일 로그 대신 세션 상태 메시지를 기반으로 대화 기록 표시 🚨🚨🚨
-    for message in st.session_state.messages:
-        # role에 따라 CSS가 구분됩니다.
-        if message["role"] == "assistant":
-             with st.chat_message("assistant"):
-                 st.markdown(message["content"])
-        else:
-             with st.chat_message("user"): # CSS 적용을 위해 role을 "user"로 설정
-                 st.markdown(message["content"])
             
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
