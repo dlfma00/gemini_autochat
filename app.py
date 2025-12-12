@@ -6,9 +6,10 @@ import os
 import time 
 import uuid 
 import json 
+from google.generativeai.types import Part
 
 # ===================================================
-# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수 (파일 관련 함수 제거)
+# ⭐️ 0. CSS 스타일 및 공유 로그 관리 함수 
 # ===================================================
 
 CUSTOM_CSS = """
@@ -26,14 +27,14 @@ div[data-testid="stChatMessage"][data-state="final"][data-user="true"] {
 }
 </style>
 """
+
 # ===================================================
-# ⭐️ 1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
+# ⭐️ 1-1. 파싱 함수 정의 (캐릭터별 말풍선 분리)
 # ===================================================
 
 def parse_and_display_response(response_text):
     """
     Gemini 응답 텍스트를 [이름]: 대사 형식으로 분리하고 저장할 메시지 리스트를 반환합니다.
-    (정규 표현식을 콜론 유무에 덜 민감하게 수정)
     """
     # 콜론이나 공백이 있든 없든, 이름 [이름] 다음에 오는 모든 것을 분리 시도
     pattern = re.compile(r'\n*(\[[^\]]+\][ :]*\s*)') 
@@ -43,13 +44,39 @@ def parse_and_display_response(response_text):
     messages_to_save = []
     
     for i in range(1, len(parts), 2):
-        speaker = parts[i].strip() # [강건우]:
+        speaker = parts[i].strip() # [이름]: (예시 이름 없이 역할만 표시)
         dialogue = parts[i+1].strip() # 대화 내용
         
         if dialogue: 
             messages_to_save.append({"role": "assistant", "content": f"**{speaker}** {dialogue}"})
             
     return messages_to_save
+
+# ===================================================
+# ⭐️ 1-2. 히스토리 변환 및 30턴 제한 함수 
+# ===================================================
+
+def format_and_truncate_history(messages, max_turns=30):
+    """
+    Streamlit session messages를 Gemini API Contents list로 변환하고, 
+    최대 max_turns만큼만 유지합니다.
+    """
+    history_to_send = messages[-max_turns:]
+    gemini_contents = []
+    
+    for message in history_to_send:
+        role = message["role"]
+        content_text = message["content"]
+        
+        gemini_role = "model" if role == "assistant" else "user"
+        
+        # API에 전달할 때는 Streamlit 출력용 마크다운 포맷(**[이름]:**)을 제거해야 합니다.
+        clean_text = re.sub(r'\*\*\[[^\]]+\]\*\*[:\s]*', '', content_text, 1).strip()
+            
+        if clean_text:
+             gemini_contents.append({"role": gemini_role, "parts": [clean_text]})
+
+    return gemini_contents
 
 # ===================================================
 # ⭐️ 2. 파일 로드 및 프롬프트 생성
@@ -78,11 +105,11 @@ def initialize_model(user_role):
         st.error("오류: Gemini API 키(GEMINI_API_KEY)가 Streamlit Secrets에 설정되지 않았습니다.")
         st.stop()
         
-    # 🚨 들여쓰기 오류가 발생하지 않도록 try/except 블록 다음에 바로 시작
     genai.configure(api_key=API_KEY) 
     
     CHARACTERS = get_system_prompt()
     
+    # 🚨 CHARACTERS 변수를 사용하여 시스템 프롬프트 구성 (캐릭터 이름 하드코딩 없음) 🚨
     system_prompt = f"""
     [규칙]: 당신은 아래 6명의 캐릭터를 동시에 연기합니다. 사용자 역할에 맞게 자연스럽게 1~6명이 대화에 참여하세요. 한 사람이 여러 번 말할 수도 있습니다.
     각 캐릭터의 대사는 띄어쓰기 포함 최대 15자를 넘지 않도록 합니다.** (단, ㅋㅋㅋㅋㅋㅋㅋㅋㅋ 등 감정표현이 길어지는 경우나, 말을 길게 해야 할 맥락이 명확한 경우에만 예외적으로 10자를 초과할 수 있습니다.)
@@ -108,7 +135,7 @@ def initialize_model(user_role):
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
-    return model.start_chat(history=[])
+    return model
 
 # ===================================================
 # ⭐️ 4. 웹 인터페이스 (UI) 구현 및 로직
@@ -119,30 +146,30 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 st.set_page_config(page_title="괴동챗봇(아직미완성)", layout="wide")
 st.title("괴동챗봇(아직미완성)")
 
-# 🚨🚨🚨 AttributeError 해결을 위한 최상위 세션 상태 초기화 🚨🚨🚨
+# 🚨 AttributeError 해결을 위한 최상위 세션 상태 초기화
 if 'user_role' not in st.session_state:
     st.session_state.user_role = ""
 
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-if 'chat' not in st.session_state:
-    st.session_state.chat = None
+if 'model' not in st.session_state: 
+    st.session_state.model = None
 # -------------------------------------------------------------
 
 # 1. 사용자 역할/이름 입력 UI (사이드바)
 user_role_input = st.sidebar.text_input("당신의 이름을 입력하세요:")
 
 
-# 2. 세션 초기화 및 새 채팅 시작 버튼 (Chat 객체 생성 및 세션 상태 초기화)
-if st.session_state.chat is None or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
+# 2. 세션 초기화 및 새 채팅 시작 버튼 (GenerativeModel 객체 생성 및 세션 상태 초기화)
+if st.session_state.model is None or st.sidebar.button("새 채팅 시작", key="restart_chat_btn"): 
     if user_role_input:
         
         st.session_state.messages = [] # 대화 기록 초기화 (사용자별)
         st.session_state.user_role = user_role_input 
         
-        # 모델 재생성 및 Chat 객체 세션 상태에 저장
-        st.session_state.chat = initialize_model(st.session_state.user_role)
+        # Model 객체를 생성하여 세션 상태에 저장합니다.
+        st.session_state.model = initialize_model(st.session_state.user_role)
         
         st.session_state.initial_message_sent = False
         st.sidebar.success(f"✅ 당신은 [{st.session_state.user_role}]로 입장합니다.")
@@ -153,17 +180,13 @@ if st.session_state.chat is None or st.sidebar.button("새 채팅 시작", key="
 
 
 # 3. 대화 기록 표시 및 입장 메시지 전송
-if st.session_state.chat is not None:
+if st.session_state.model is not None: # model이 생성된 후에만 실행
     
-    # 🚨 세션 상태 메시지를 기반으로 대화 기록 표시
+    # 세션 상태 메시지를 기반으로 대화 기록 표시
     for message in st.session_state.messages:
         # role에 따라 CSS가 구분됩니다.
-        if message["role"] == "assistant":
-             with st.chat_message("assistant"):
-                 st.markdown(message["content"])
-        else:
-             with st.chat_message("user"): # CSS 적용을 위해 role을 "user"로 설정
-                 st.markdown(message["content"])
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
             
     # 입장 메시지 자동 전송 (최초 1회)
     if not st.session_state.initial_message_sent:
@@ -171,20 +194,23 @@ if st.session_state.chat is not None:
         initial_input = f"(시스템 알림: '{st.session_state.user_role}'님이 입장하셨습니다.)" 
         user_display_input = f"**[{st.session_state.user_role}]**: (입장)"
         
-        # 입장 메시지(사용자 역할)를 세션 상태에 먼저 추가
+        # 1. 입장 메시지(사용자 역할)를 세션 상태에 추가
         st.session_state.messages.append({"role": "user", "content": user_display_input})
         
         with st.spinner('캐릭터들이 당신의 입장을 인식 중...'):
             try:
-                response = st.session_state.chat.send_message(initial_input)
+                # 2. 히스토리 구성 (입장 메시지 1개 포함)
+                contents = format_and_truncate_history(st.session_state.messages, max_turns=30)
                 
-                # 1. AI 응답 파싱
+                # 3. API 호출 (generate_content 사용)
+                # 모델이 이전 대화(히스토리)를 기반으로 다음 응답을 생성하도록 합니다.
+                response = st.session_state.model.generate_content(contents)
+                
+                # 4. AI 응답 파싱 및 로그에 추가
                 parsed_messages = parse_and_display_response(response.text)
-                
-                # 2. 로그에 AI 응답 추가
                 st.session_state.messages.extend(parsed_messages)
                 
-                # 3. 세션 상태 업데이트 후 재실행 (출력을 위해 스크립트 재실행)
+                # 5. 세션 상태 업데이트 후 재실행
                 st.session_state.initial_message_sent = True
                 st.rerun() 
                     
@@ -198,7 +224,7 @@ if st.session_state.chat is not None:
 
 if prompt := st.chat_input("채팅을 입력하세요..."):
     
-    if st.session_state.chat is None:
+    if st.session_state.model is None:
         st.warning("먼저 이름을 입력하고 '새 채팅 시작' 버튼을 눌러주세요.")
         st.stop()
         
@@ -212,8 +238,11 @@ if prompt := st.chat_input("채팅을 입력하세요..."):
     # 3. Gemini API 호출 및 전체 후속 로직 (try 블록 내부)
     with st.spinner('캐릭터들이 대화 중...'):
         try:
-            # API 호출
-            response = st.session_state.chat.send_message(prompt) 
+            # 🚨🚨🚨 히스토리(30턴 제한)를 Contents로 변환 🚨🚨🚨
+            contents = format_and_truncate_history(st.session_state.messages, max_turns=30)
+
+            # API 호출 (generate_content 사용, history 포함)
+            response = st.session_state.model.generate_content(contents) 
             full_response_text = response.text 
             
             # 4. AI 응답 파싱 및 로그에 추가
